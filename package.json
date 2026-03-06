@@ -1,0 +1,19 @@
+{
+  "name": "meetsense-live",
+  "version": "1.0.0",
+  "description": "Next-Generation Multimodal AI Meeting Agent",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
+    "build": "cd frontend && npm run build"
+  },
+  "dependencies": {
+    "@google/genai": "^1.44.0",
+    "concurrently": "^8.2.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1"
+  }
+}
