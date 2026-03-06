@@ -47,8 +47,18 @@ export default function Dashboard() {
   const transcriptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMounted = useRef(true);
 
+  // Real-time insights interval
+  const insightsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   // Background noise filtering state
   const [pendingTranscript, setPendingTranscript] = useState<string>("");
+
+  // Live insights during meeting
+  const [liveInsights, setLiveInsights] = useState<InsightsResponse | null>(
+    null,
+  );
+  const [isLiveInsightsEnabled, setIsLiveInsightsEnabled] =
+    useState<boolean>(true);
 
   // Filter out background noise and short utterances
   const isValidTranscript = (text: string): boolean => {
@@ -179,6 +189,50 @@ export default function Dashboard() {
     [realtimeMode],
   );
 
+  // Fetch live insights during meeting
+  const fetchLiveInsights = useCallback(async (currentTranscript: string) => {
+    if (!currentTranscript.trim() || currentTranscript.length < 50) return;
+
+    try {
+      const result = await api.getInsights(currentTranscript);
+      if (isMounted.current) {
+        setLiveInsights(result);
+        setLastUpdate(new Date());
+      }
+    } catch (error) {
+      console.error("Live insights error:", error);
+    }
+  }, []);
+
+  // Start live insights interval
+  const startLiveInsights = useCallback(() => {
+    if (insightsIntervalRef.current) {
+      clearInterval(insightsIntervalRef.current);
+    }
+
+    // Initial fetch after 5 seconds
+    setTimeout(() => {
+      if (isMounted.current && transcript) {
+        fetchLiveInsights(transcript);
+      }
+    }, 5000);
+
+    // Then fetch every 10 seconds
+    insightsIntervalRef.current = setInterval(() => {
+      if (isMounted.current && transcript) {
+        fetchLiveInsights(transcript);
+      }
+    }, 10000);
+  }, [transcript, fetchLiveInsights]);
+
+  // Stop live insights interval
+  const stopLiveInsights = useCallback(() => {
+    if (insightsIntervalRef.current) {
+      clearInterval(insightsIntervalRef.current);
+      insightsIntervalRef.current = null;
+    }
+  }, []);
+
   const startMeetingAssistant = () => {
     if (typeof window === "undefined") return;
 
@@ -196,6 +250,7 @@ export default function Dashboard() {
     setSummary(null);
     setInsights(null);
     setSuggestions([]);
+    setLiveInsights(null);
     setIsProcessingComplete(false);
     setPendingTranscript("");
     setMeetingStartTime(Date.now());
@@ -207,6 +262,8 @@ export default function Dashboard() {
 
     recognition.onstart = () => {
       setIsRecording(true);
+      // Start live insights when recording starts
+      startLiveInsights();
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -271,6 +328,10 @@ export default function Dashboard() {
     if (transcriptTimeoutRef.current) {
       clearTimeout(transcriptTimeoutRef.current);
     }
+
+    // Stop live insights
+    stopLiveInsights();
+
     setIsRecording(false);
 
     // Only process if there's a transcript
@@ -696,6 +757,129 @@ export default function Dashboard() {
                 suggestions={suggestions}
                 isRealtime={realtimeMode}
               />
+            )}
+
+            {/* Live AI Insights Panel - Shows during meeting */}
+            {isRecording && liveInsights && (
+              <div className="glass rounded-2xl p-6 animate-fade-in">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <svg
+                      className="w-5 h-5 text-accent-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    Live AI Insights
+                  </h2>
+                  <span className="text-xs text-dark-500 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    Updating...
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Tasks */}
+                  {liveInsights.tasks && liveInsights.tasks.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-dark-400 mb-2">
+                        Tasks Assigned
+                      </h3>
+                      <ul className="space-y-1">
+                        {liveInsights.tasks.map((task, idx) => (
+                          <li
+                            key={idx}
+                            className="text-sm text-dark-200 flex items-start gap-2"
+                          >
+                            <span className="text-accent-500 mt-1">•</span>
+                            {task}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Deadlines */}
+                  {liveInsights.deadlines &&
+                    liveInsights.deadlines.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-dark-400 mb-2">
+                          Deadlines Mentioned
+                        </h3>
+                        <ul className="space-y-1">
+                          {liveInsights.deadlines.map((deadline, idx) => (
+                            <li
+                              key={idx}
+                              className="text-sm text-dark-200 flex items-start gap-2"
+                            >
+                              <span className="text-red-500 mt-1">•</span>
+                              {deadline}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                  {/* Decisions */}
+                  {liveInsights.decisions &&
+                    liveInsights.decisions.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-dark-400 mb-2">
+                          Decisions Made
+                        </h3>
+                        <ul className="space-y-1">
+                          {liveInsights.decisions.map((decision, idx) => (
+                            <li
+                              key={idx}
+                              className="text-sm text-dark-200 flex items-start gap-2"
+                            >
+                              <span className="text-green-500 mt-1">•</span>
+                              {decision}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                  {/* Topics */}
+                  {liveInsights.topics && liveInsights.topics.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-dark-400 mb-2">
+                        Key Topics
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {liveInsights.topics.map((topic, idx) => (
+                          <span
+                            key={idx}
+                            className="px-3 py-1 bg-dark-800 rounded-full text-sm text-dark-300"
+                          >
+                            {topic}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {(!liveInsights.tasks || liveInsights.tasks.length === 0) &&
+                    (!liveInsights.deadlines ||
+                      liveInsights.deadlines.length === 0) &&
+                    (!liveInsights.decisions ||
+                      liveInsights.decisions.length === 0) &&
+                    (!liveInsights.topics ||
+                      liveInsights.topics.length === 0) && (
+                      <p className="text-sm text-dark-500 text-center py-4">
+                        No insights detected yet. Keep talking...
+                      </p>
+                    )}
+                </div>
+              </div>
             )}
 
             {/* Meeting History */}
