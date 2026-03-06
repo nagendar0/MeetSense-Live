@@ -22,6 +22,8 @@ interface Suggestion {
   type: "info" | "warning" | "tip";
 }
 
+const STORAGE_KEY = "meetsense_meeting_history";
+
 export default function Dashboard() {
   const [transcript, setTranscript] = useState<string>("");
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -32,13 +34,63 @@ export default function Dashboard() {
   const [connectionStatus, setConnectionStatus] = useState<
     "checking" | "connected" | "disconnected"
   >("checking");
-  const [realtimeMode, setRealtimeMode] = useState<boolean>(true);
+  const [realtimeMode, setRealtimeMode] = useState<boolean>(false); // Default to manual mode for silent meeting
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [isSideAssistantOpen, setIsSideAssistantOpen] =
+    useState<boolean>(false);
+  const [meetingStartTime, setMeetingStartTime] = useState<number | null>(null);
+  const [isProcessingComplete, setIsProcessingComplete] =
+    useState<boolean>(false);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const transcriptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMounted = useRef(true);
+
+  // Background noise filtering state
+  const [pendingTranscript, setPendingTranscript] = useState<string>("");
+
+  // Filter out background noise and short utterances
+  const isValidTranscript = (text: string): boolean => {
+    // Ignore very short texts
+    if (text.trim().length < 3) return false;
+
+    // Ignore common background sounds/noise
+    const noisePatterns = [
+      /^[^a-zA-Z]+$/, // Only punctuation/symbols
+      /^(uh|um|ah|eh|mm|hm|ok|okay|yeah|yes|no|hmm)+$/i,
+      /^(noise|background|static)/i,
+    ];
+
+    if (noisePatterns.some((pattern) => pattern.test(text.trim()))) {
+      return false;
+    }
+
+    // Ignore repeated same words
+    const words = text.trim().split(/\s+/);
+    if (words.length === 1 && words[0].length < 4) return false;
+
+    // Check for repeated words (e.g., "uh uh uh")
+    const uniqueWords = new Set(words.map((w) => w.toLowerCase()));
+    if (words.length > 1 && uniqueWords.size === 1) return false;
+
+    return true;
+  };
+
+  // Save meeting to localStorage
+  const saveMeetingToHistory = useCallback((meeting: MeetingRecord) => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    let meetings: MeetingRecord[] = [];
+    if (stored) {
+      try {
+        meetings = JSON.parse(stored);
+      } catch (e) {
+        console.error("Failed to parse meeting history:", e);
+      }
+    }
+    const updatedMeetings = [meeting, ...meetings].slice(0, 20);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedMeetings));
+  }, []);
 
   // Setup socket listeners
   useEffect(() => {
@@ -127,7 +179,7 @@ export default function Dashboard() {
     [realtimeMode],
   );
 
-  const startRecording = () => {
+  const startMeetingAssistant = () => {
     if (typeof window === "undefined") return;
 
     const SpeechRecognition =
@@ -138,6 +190,15 @@ export default function Dashboard() {
       );
       return;
     }
+
+    // Reset state for new meeting
+    setTranscript("");
+    setSummary(null);
+    setInsights(null);
+    setSuggestions([]);
+    setIsProcessingComplete(false);
+    setPendingTranscript("");
+    setMeetingStartTime(Date.now());
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
@@ -163,11 +224,15 @@ export default function Dashboard() {
       }
 
       if (finalTranscript) {
-        const newTranscript = transcript + finalTranscript;
-        setTranscript(newTranscript);
+        // Filter out noise before adding
+        if (isValidTranscript(finalTranscript)) {
+          const newTranscript = transcript + finalTranscript;
+          setTranscript(newTranscript);
+          setPendingTranscript(newTranscript);
 
-        // Send to real-time AI processing
-        processTranscriptUpdate(newTranscript);
+          // Send to real-time AI processing (only if realtime mode is on)
+          processTranscriptUpdate(newTranscript);
+        }
       }
     };
 
@@ -178,19 +243,27 @@ export default function Dashboard() {
         alert(
           "Microphone access denied. Please allow microphone access to use voice transcription.",
         );
-        stopRecording();
+        stopMeetingAssistant();
       }
     };
 
     recognition.onend = () => {
-      setIsRecording(false);
+      // Auto-restart if still recording
+      if (isRecording && recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          console.error("Failed to restart recognition:", e);
+        }
+      }
     };
 
     recognition.start();
     recognitionRef.current = recognition;
   };
 
-  const stopRecording = () => {
+  const stopMeetingAssistant = async () => {
+    // Stop speech recognition
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
@@ -199,7 +272,54 @@ export default function Dashboard() {
       clearTimeout(transcriptTimeoutRef.current);
     }
     setIsRecording(false);
+
+    // Only process if there's a transcript
+    if (!transcript.trim()) {
+      return;
+    }
+
+    // Calculate meeting duration
+    const duration = meetingStartTime
+      ? Math.floor((Date.now() - meetingStartTime) / 1000)
+      : 0;
+
+    // Set loading state
+    setIsLoading(true);
+
+    try {
+      // Generate summary
+      const summaryResult = await api.summarize(transcript);
+      setSummary(summaryResult);
+
+      // Generate insights
+      const insightsResult = await api.getInsights(transcript);
+      setInsights(insightsResult);
+
+      // Save to meeting history
+      const meetingRecord: MeetingRecord = {
+        id: Date.now().toString(),
+        date: new Date().toISOString(),
+        transcript: transcript,
+        summary: summaryResult,
+        insights: insightsResult,
+        duration: duration,
+      };
+      saveMeetingToHistory(meetingRecord);
+
+      setIsProcessingComplete(true);
+    } catch (error) {
+      console.error("Error processing meeting:", error);
+      alert(
+        "Failed to process meeting. Please check if the backend is running.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Legacy functions for backward compatibility
+  const startRecording = startMeetingAssistant;
+  const stopRecording = stopMeetingAssistant;
 
   // Manual summary generation (non-real-time)
   const generateSummary = async () => {
@@ -256,7 +376,14 @@ export default function Dashboard() {
     setSummary(null);
     setInsights(null);
     setSuggestions([]);
+    setIsProcessingComplete(false);
+    setMeetingStartTime(null);
     socketService.resetSession();
+  };
+
+  // Floating chat icon click handler
+  const handleChatIconClick = () => {
+    setIsSideAssistantOpen(true);
   };
 
   return (
@@ -364,18 +491,69 @@ export default function Dashboard() {
           )}
         </AnimatePresence>
 
+        {/* Recording Status Banner */}
+        <AnimatePresence>
+          {isRecording && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mb-4 glass rounded-xl p-4 flex items-center justify-between bg-gradient-to-r from-red-900/30 to-transparent border-l-4 border-red-500"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                <span className="text-red-400 font-medium">
+                  🎙️ Meeting in Progress - AI is listening silently...
+                </span>
+              </div>
+              <div className="text-sm text-dark-400">
+                {meetingStartTime && (
+                  <span>
+                    Duration:{" "}
+                    {Math.floor((Date.now() - meetingStartTime) / 60000)}m{" "}
+                    {Math.floor(
+                      ((Date.now() - meetingStartTime) % 60000) / 1000,
+                    )}
+                    s
+                  </span>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Processing Banner */}
+        <AnimatePresence>
+          {isLoading && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mb-4 glass rounded-xl p-4 flex items-center justify-center gap-3"
+            >
+              <div className="w-5 h-5 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-accent-400 font-medium">
+                Processing meeting transcript...
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column */}
           <div className="space-y-6">
-            {/* Voice Controls */}
+            {/* Meeting Assistant Controls */}
             <div className="glass rounded-2xl p-6">
-              <h2 className="text-lg font-semibold mb-4">
-                Voice Transcription
-              </h2>
+              <h2 className="text-lg font-semibold mb-4">Meeting Assistant</h2>
+              <p className="text-sm text-dark-400 mb-4">
+                The AI assistant will silently listen and transcribe your
+                meeting. Click "Stop Meeting Assistant" to end and analyze the
+                meeting.
+              </p>
               <div className="flex items-center gap-4">
                 {!isRecording ? (
                   <button
-                    onClick={startRecording}
+                    onClick={startMeetingAssistant}
                     className="flex items-center gap-2 px-6 py-3 bg-accent-600 hover:bg-accent-700 text-white rounded-xl font-medium transition-smooth hover:scale-105"
                   >
                     <svg
@@ -391,11 +569,11 @@ export default function Dashboard() {
                         d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
                       />
                     </svg>
-                    Start Voice
+                    Start Meeting Assistant
                   </button>
                 ) : (
                   <button
-                    onClick={stopRecording}
+                    onClick={stopMeetingAssistant}
                     className="flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-smooth hover:scale-105 recording-pulse"
                   >
                     <svg
@@ -417,11 +595,11 @@ export default function Dashboard() {
                         d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
                       />
                     </svg>
-                    Stop Voice
+                    Stop Meeting Assistant
                   </button>
                 )}
 
-                {transcript && (
+                {transcript && !isRecording && (
                   <button
                     onClick={clearTranscript}
                     className="px-4 py-3 text-dark-400 hover:text-dark-200 hover:bg-dark-800 rounded-xl transition-smooth"
@@ -434,7 +612,10 @@ export default function Dashboard() {
               {isRecording && (
                 <div className="mt-4 flex items-center gap-2 text-red-400">
                   <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                  <span className="text-sm">Listening... Speak naturally</span>
+                  <span className="text-sm">
+                    Listening silently... The AI will not respond during the
+                    meeting
+                  </span>
                 </div>
               )}
             </div>
@@ -443,7 +624,7 @@ export default function Dashboard() {
             <TranscriptPanel transcript={transcript} />
 
             {/* Summary & Insights Buttons */}
-            {transcript && !realtimeMode && (
+            {transcript && !realtimeMode && !isProcessingComplete && (
               <div className="glass rounded-2xl p-6">
                 <h2 className="text-lg font-semibold mb-4">AI Analysis</h2>
                 <div className="flex flex-wrap gap-3">
@@ -516,6 +697,9 @@ export default function Dashboard() {
                 isRealtime={realtimeMode}
               />
             )}
+
+            {/* Meeting History */}
+            <MeetingHistory />
           </div>
 
           {/* Right Column */}
@@ -528,6 +712,34 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Floating Chat Button */}
+      <button
+        onClick={handleChatIconClick}
+        className="fixed bottom-6 right-6 z-40 w-14 h-14 bg-accent-600 hover:bg-accent-700 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-110"
+        title="Open Meeting Chat Assistant"
+      >
+        <svg
+          className="w-6 h-6 text-white"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+          />
+        </svg>
+      </button>
+
+      {/* Side Assistant Panel */}
+      <SideAssistant
+        isVisible={isSideAssistantOpen}
+        transcript={transcript}
+        onClose={() => setIsSideAssistantOpen(false)}
+      />
 
       {/* Footer */}
       <footer className="border-t border-dark-700 mt-12">
