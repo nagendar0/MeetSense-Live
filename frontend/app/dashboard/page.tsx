@@ -3,7 +3,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { api, SummaryResponse, InsightsResponse } from "../../services/api";
+import {
+  api,
+  SummaryResponse,
+  InsightsResponse,
+  KnowledgeGraphResponse,
+} from "../../services/api";
 import socketService from "../../services/socket";
 import { MeetingRecord } from "../../components/MeetingHistory";
 
@@ -11,6 +16,7 @@ import { MeetingRecord } from "../../components/MeetingHistory";
 import TranscriptPanel from "../../components/TranscriptPanel";
 import SummaryPanel from "../../components/SummaryPanel";
 import InsightsPanel from "../../components/InsightsPanel";
+import KnowledgeGraphPanel from "../../components/KnowledgeGraphPanel";
 import ChatAssistant from "../../components/ChatAssistant";
 import ImageUpload from "../../components/ImageUpload";
 import ScreenCapture from "../../components/ScreenCapture";
@@ -42,6 +48,21 @@ export default function Dashboard() {
   const [isProcessingComplete, setIsProcessingComplete] =
     useState<boolean>(false);
 
+  // Error message state
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Chat panel state
+  const [isChatPanelOpen, setIsChatPanelOpen] = useState<boolean>(false);
+  const [selectedMeetingTranscript, setSelectedMeetingTranscript] = useState<
+    string | null
+  >(null);
+
+  // Live AI insights messages for chat
+  const [liveInsightsChatMessages, setLiveInsightsChatMessages] = useState<
+    string[]
+  >([]);
+  const lastInsightUpdateRef = useRef<string>("");
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const transcriptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -59,6 +80,12 @@ export default function Dashboard() {
   );
   const [isLiveInsightsEnabled, setIsLiveInsightsEnabled] =
     useState<boolean>(true);
+
+  // Knowledge Graph state
+  const [knowledgeGraph, setKnowledgeGraph] =
+    useState<KnowledgeGraphResponse | null>(null);
+  const [isGeneratingKnowledge, setIsGeneratingKnowledge] =
+    useState<boolean>(false);
 
   // Screen capture state
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
@@ -261,6 +288,14 @@ export default function Dashboard() {
         setSummary(null);
         setInsights(null);
         setSuggestions([]);
+        setKnowledgeGraph(null);
+      }
+    });
+
+    socketService.on("knowledge-update", (data: KnowledgeGraphResponse) => {
+      if (isMounted.current) {
+        setKnowledgeGraph(data);
+        setLastUpdate(new Date());
       }
     });
 
@@ -344,17 +379,58 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Check if browser supports speech recognition
+  const isSpeechRecognitionSupported =
+    typeof window !== "undefined" &&
+    (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  // Request microphone permission and start meeting
+  const requestMicrophoneAndStartMeeting = async () => {
+    try {
+      // First request microphone permission explicitly
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        // Permission granted - stop the stream, we'll use it in speech recognition
+        stream.getTracks().forEach((track) => track.stop());
+      }
+
+      // Now start the meeting assistant
+      startMeetingAssistant();
+    } catch (error: any) {
+      console.error("Microphone permission error:", error);
+      if (
+        error.name === "NotAllowedError" ||
+        error.name === "PermissionDeniedError"
+      ) {
+        setErrorMessage(
+          "Microphone access denied. Please allow microphone access in your browser settings and try again.",
+        );
+      } else if (error.name === "NotFoundError") {
+        setErrorMessage(
+          "No microphone found. Please connect a microphone and try again.",
+        );
+      } else {
+        setErrorMessage(`Could not access microphone: ${error.message}`);
+      }
+    }
+  };
+
   const startMeetingAssistant = () => {
     if (typeof window === "undefined") return;
 
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert(
+      setErrorMessage(
         "Speech recognition is not supported in this browser. Please use Chrome or Edge.",
       );
       return;
     }
+
+    // Clear any previous error
+    setErrorMessage(null);
 
     // Reset state for new meeting
     setTranscript("");
@@ -467,6 +543,10 @@ export default function Dashboard() {
       const insightsResult = await api.getInsights(transcript);
       setInsights(insightsResult);
 
+      // Generate knowledge graph
+      const knowledgeResult = await api.getKnowledge(transcript);
+      setKnowledgeGraph(knowledgeResult);
+
       // Save to meeting history
       const meetingRecord: MeetingRecord = {
         id: Date.now().toString(),
@@ -535,6 +615,28 @@ export default function Dashboard() {
     }
   };
 
+  // Generate knowledge graph from transcript
+  const generateKnowledgeGraph = async () => {
+    if (!transcript.trim()) {
+      return;
+    }
+
+    setIsGeneratingKnowledge(true);
+    try {
+      const result = await api.getKnowledge(transcript);
+      if (isMounted.current) {
+        setKnowledgeGraph(result);
+        setLastUpdate(new Date());
+      }
+    } catch (error) {
+      console.error("Knowledge graph error:", error);
+    } finally {
+      if (isMounted.current) {
+        setIsGeneratingKnowledge(false);
+      }
+    }
+  };
+
   // Force real-time update
   const forceRealtimeUpdate = () => {
     if (transcript.trim() && socketService.isConnected()) {
@@ -550,6 +652,7 @@ export default function Dashboard() {
     setSuggestions([]);
     setIsProcessingComplete(false);
     setMeetingStartTime(null);
+    setKnowledgeGraph(null);
     socketService.resetSession();
   };
 
@@ -558,82 +661,81 @@ export default function Dashboard() {
     setIsSideAssistantOpen(true);
   };
 
+  // Start new meeting - resets everything
+  const startNewMeeting = () => {
+    setTranscript("");
+    setSummary(null);
+    setInsights(null);
+    setSuggestions([]);
+    setLiveInsights(null);
+    setLiveInsightsChatMessages([]);
+    setIsProcessingComplete(false);
+    setMeetingStartTime(null);
+    setSelectedMeetingTranscript(null);
+    setKnowledgeGraph(null);
+    socketService.resetSession();
+  };
+
+  // Handle chat with past meeting
+  const handleChatWithMeeting = (meeting: MeetingRecord) => {
+    if (meeting.transcript) {
+      setSelectedMeetingTranscript(meeting.transcript);
+      setIsSideAssistantOpen(true);
+    }
+  };
+
+  // Close past meeting chat
+  const closePastMeetingChat = () => {
+    setSelectedMeetingTranscript(null);
+    setIsSideAssistantOpen(false);
+  };
+
   return (
-    <main className="min-h-screen bg-dark-950 text-dark-100">
-      {/* Header */}
-      <header className="sticky top-0 z-50 glass border-b border-dark-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Link
-                href="/"
-                className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500 to-accent-700 flex items-center justify-center">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold gradient-text">
-                    MeetSense Live
-                  </h1>
-                  <p className="text-xs text-dark-500">AI Meeting Agent</p>
-                </div>
-              </Link>
-            </div>
+    <div className="min-h-screen bg-dark-950 text-dark-100 p-6">
+      {/* Header with Real-time Mode Toggle */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold gradient-text">Dashboard</h1>
+          <p className="text-dark-400">Welcome to MeetSense Live</p>
+        </div>
 
-            <div className="flex items-center gap-4">
-              {/* Real-time Mode Toggle */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setRealtimeMode(!realtimeMode)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    realtimeMode
-                      ? "bg-accent-600 text-white"
-                      : "bg-dark-700 text-dark-400"
-                  }`}
-                >
-                  {realtimeMode ? "⚡ Real-time" : "📝 Manual"}
-                </button>
-              </div>
+        <div className="flex items-center gap-4">
+          {/* Real-time Mode Toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setRealtimeMode(!realtimeMode)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                realtimeMode
+                  ? "bg-accent-600 text-white"
+                  : "bg-dark-700 text-dark-400"
+              }`}
+            >
+              {realtimeMode ? "⚡ Real-time" : "📝 Manual"}
+            </button>
+          </div>
 
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    connectionStatus === "connected"
-                      ? "bg-accent-500"
-                      : connectionStatus === "checking"
-                        ? "bg-yellow-500"
-                        : "bg-red-500"
-                  }`}
-                />
-                <span className="text-sm text-dark-400">
-                  {connectionStatus === "connected"
-                    ? "Ready"
-                    : connectionStatus === "checking"
-                      ? "Checking..."
-                      : "Backend Offline"}
-                </span>
-              </div>
-            </div>
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                connectionStatus === "connected"
+                  ? "bg-accent-500"
+                  : connectionStatus === "checking"
+                    ? "bg-yellow-500"
+                    : "bg-red-500"
+              }`}
+            />
+            <span className="text-sm text-dark-400">
+              {connectionStatus === "connected"
+                ? "Ready"
+                : connectionStatus === "checking"
+                  ? "Checking..."
+                  : "Backend Offline"}
+            </span>
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Real-time Status Banner */}
+      {/* Real-time Status Banner */}
         <AnimatePresence>
           {isRecording && realtimeMode && (
             <motion.div
@@ -722,10 +824,18 @@ export default function Dashboard() {
                 meeting. Click "Stop Meeting Assistant" to end and analyze the
                 meeting.
               </p>
+
+              {/* Error Message Display */}
+              {errorMessage && (
+                <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-400 text-sm">
+                  {errorMessage}
+                </div>
+              )}
+
               <div className="flex flex-wrap items-center gap-4">
                 {!isRecording ? (
                   <button
-                    onClick={startMeetingAssistant}
+                    onClick={requestMicrophoneAndStartMeeting}
                     className="flex items-center gap-2 px-6 py-3 bg-accent-600 hover:bg-accent-700 text-white rounded-xl font-medium transition-smooth hover:scale-105"
                   >
                     <svg
@@ -822,6 +932,29 @@ export default function Dashboard() {
                     Clear
                   </button>
                 )}
+
+                {/* Start New Meeting Button - Show after processing is complete */}
+                {isProcessingComplete && (
+                  <button
+                    onClick={startNewMeeting}
+                    className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium transition-smooth hover:scale-105"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                    Start New Meeting
+                  </button>
+                )}
               </div>
 
               {isRecording && (
@@ -900,6 +1033,30 @@ export default function Dashboard() {
                       </svg>
                     )}
                     Get Insights
+                  </button>
+                  <button
+                    onClick={generateKnowledgeGraph}
+                    disabled={isGeneratingKnowledge}
+                    className="flex items-center gap-2 px-5 py-3 bg-purple-700 hover:bg-purple-600 text-white rounded-xl font-medium transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isGeneratingKnowledge ? (
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"
+                        />
+                      </svg>
+                    )}
+                    Generate Knowledge Graph
                   </button>
                 </div>
               </div>
@@ -1112,11 +1269,19 @@ export default function Dashboard() {
             <canvas ref={screenCanvasRef} className="hidden" />
 
             {/* Meeting History */}
-            <MeetingHistory />
+            <MeetingHistory onChatWithMeeting={handleChatWithMeeting} />
           </div>
 
           {/* Right Column */}
           <div className="space-y-6">
+            {/* Knowledge Graph Panel */}
+            {(knowledgeGraph || (realtimeMode && lastUpdate)) && (
+              <KnowledgeGraphPanel
+                knowledge={knowledgeGraph}
+                isRealtime={realtimeMode}
+              />
+            )}
+
             {/* Chat Assistant */}
             <ChatAssistant transcript={transcript} />
 

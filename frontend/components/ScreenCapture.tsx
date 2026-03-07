@@ -104,10 +104,10 @@ export default function ScreenCapture({
     }
   }, [isActive, onAnalysisComplete]);
 
-  const startPeriodicCapture = () => {
+  const startPeriodicCapture = useCallback(() => {
     captureIntervalRef.current = setInterval(captureAndAnalyze, 10000);
     setTimeout(captureAndAnalyze, 2000);
-  };
+  }, [captureAndAnalyze]);
 
   useEffect(() => {
     return () => {
@@ -126,7 +126,7 @@ export default function ScreenCapture({
         startPeriodicCapture();
       }
     }
-  }, [isActive, isSharing]);
+  }, [isActive, isSharing, startPeriodicCapture]);
 
   return (
     <div className="glass rounded-2xl p-4">

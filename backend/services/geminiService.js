@@ -111,6 +111,29 @@ class GeminiService {
     });
   }
 
+  /**
+   * Analyze audio and transcribe
+   * Uses Gemini's native audio support
+   */
+  async analyzeAudio(audioBase64, mimeType, prompt) {
+    if (!this.isConfigured()) {
+      throw new AppError("Gemini API key not configured", 500);
+    }
+
+    return this.retryWithBackoff(async () => {
+      const result = await this.model.generateContent([
+        {
+          inlineData: {
+            mimeType: mimeType,
+            data: audioBase64,
+          },
+        },
+        { text: prompt },
+      ]);
+      return result.response.text();
+    });
+  }
+
   async analyzeScreen(imageBase64) {
     const prompt = `Analyze this screen capture from a meeting. Describe what is visible - slides, diagrams, code, charts, documents, or any content being shared. Provide a clear explanation of what this screen shows in the context of a meeting or presentation. If there is text, extract the key information.`;
 

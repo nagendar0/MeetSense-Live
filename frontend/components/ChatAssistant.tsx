@@ -1,46 +1,70 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import socketService from '../services/socket';
+import { useState, useEffect, useRef } from "react";
+import socketService from "../services/socket";
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
+  timestamp?: number;
 }
 
 interface ChatAssistantProps {
   transcript: string;
+  meetingTranscript?: string; // For past meeting Q&A
+  isLoadingMeeting?: boolean;
+  onClose?: () => void;
 }
 
-export default function ChatAssistant({ transcript }: ChatAssistantProps) {
+export default function ChatAssistant({
+  transcript: currentTranscript,
+  meetingTranscript,
+  isLoadingMeeting = false,
+  onClose,
+}: ChatAssistantProps) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Use meetingTranscript if provided (for past meetings), otherwise use current transcript
+  const transcript = meetingTranscript || currentTranscript;
+  const isPastMeeting = !!meetingTranscript;
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Clear messages when switching between live and past meeting
+  useEffect(() => {
+    setMessages([]);
+  }, [meetingTranscript]);
 
   // Listen for socket events
   useEffect(() => {
-    socketService.on('answer-result', (data: { answer: string }) => {
+    socketService.on("answer-result", (data: { answer: string }) => {
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
-        role: 'assistant',
+        role: "assistant",
         content: data.answer,
       };
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages((prev) => [...prev, assistantMessage]);
       setIsLoading(false);
     });
 
-    socketService.on('answer-start', () => {
+    socketService.on("answer-start", () => {
       setIsLoading(true);
     });
   }, []);
 
   const suggestedQuestions = [
-    'What tasks were assigned?',
-    'What were the main decisions?',
-    'When are the deadlines?',
-    'What topics were discussed?',
-    'Summarize the key points',
+    "What tasks were assigned?",
+    "What were the main decisions?",
+    "When are the deadlines?",
+    "What topics were discussed?",
+    "Summarize the key points",
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -49,12 +73,12 @@ export default function ChatAssistant({ transcript }: ChatAssistantProps) {
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      role: 'user',
+      role: "user",
       content: input,
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
 
     // Use Socket.io for real-time question
     if (socketService.isConnected()) {
@@ -63,22 +87,22 @@ export default function ChatAssistant({ transcript }: ChatAssistantProps) {
       // Fallback to REST API if socket not connected
       setIsLoading(true);
       try {
-        const { api } = await import('../services/api');
+        const { api } = await import("../services/api");
         const response = await api.askQuestion(transcript, input);
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
-          role: 'assistant',
+          role: "assistant",
           content: response.answer,
         };
-        setMessages(prev => [...prev, assistantMessage]);
+        setMessages((prev) => [...prev, assistantMessage]);
       } catch (error) {
-        console.error('Chat error:', error);
+        console.error("Chat error:", error);
         const errorMessage: Message = {
           id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: 'Sorry, I couldn\'t get an answer. Please try again.',
+          role: "assistant",
+          content: "Sorry, I couldn't get an answer. Please try again.",
         };
-        setMessages(prev => [...prev, errorMessage]);
+        setMessages((prev) => [...prev, errorMessage]);
       } finally {
         setIsLoading(false);
       }
@@ -87,25 +111,79 @@ export default function ChatAssistant({ transcript }: ChatAssistantProps) {
 
   const handleSuggestedQuestion = (question: string) => {
     setInput(question);
-    handleSubmit(new Event('submit') as any);
+    handleSubmit(new Event("submit") as any);
   };
 
   return (
     <div className="glass rounded-2xl p-6 flex flex-col h-[500px]">
-      <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-        <svg className="w-5 h-5 text-accent-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-        </svg>
-        Meeting Chat Assistant
-      </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <svg
+            className="w-5 h-5 text-accent-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+            />
+          </svg>
+          Meeting Chat Assistant
+        </h2>
+        {isPastMeeting && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-2 py-1 bg-purple-600/30 text-purple-400 rounded-full">
+              Past Meeting
+            </span>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="p-1 hover:bg-dark-700 rounded-lg transition-colors"
+              >
+                <svg
+                  className="w-4 h-4 text-dark-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {!transcript ? (
         <div className="flex-1 flex flex-col items-center justify-center text-dark-500">
-          <svg className="w-16 h-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          <svg
+            className="w-16 h-16 mb-4 opacity-50"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+            />
           </svg>
-          <p className="text-center mb-2">Start a voice transcript to chat about your meeting</p>
-          <p className="text-sm text-dark-600">Ask questions about what was discussed, tasks assigned, or decisions made</p>
+          <p className="text-center mb-2">
+            Start a voice transcript to chat about your meeting
+          </p>
+          <p className="text-sm text-dark-600">
+            Ask questions about what was discussed, tasks assigned, or decisions
+            made
+          </p>
         </div>
       ) : (
         <>
@@ -113,7 +191,9 @@ export default function ChatAssistant({ transcript }: ChatAssistantProps) {
           <div className="flex-1 overflow-y-auto mb-4 space-y-3">
             {messages.length === 0 && (
               <div className="text-center mb-4">
-                <p className="text-dark-400 mb-3">Ask me anything about the meeting!</p>
+                <p className="text-dark-400 mb-3">
+                  Ask me anything about the meeting!
+                </p>
                 <div className="flex flex-wrap gap-2 justify-center">
                   {suggestedQuestions.map((question, index) => (
                     <button
@@ -132,13 +212,13 @@ export default function ChatAssistant({ transcript }: ChatAssistantProps) {
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
                   className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                    message.role === 'user'
-                      ? 'bg-accent-600 text-white'
-                      : 'bg-dark-700 text-dark-200'
+                    message.role === "user"
+                      ? "bg-accent-600 text-white"
+                      : "bg-dark-700 text-dark-200"
                   }`}
                 >
                   <p className="text-sm">{message.content}</p>
@@ -157,6 +237,7 @@ export default function ChatAssistant({ transcript }: ChatAssistantProps) {
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Input */}
@@ -174,8 +255,18 @@ export default function ChatAssistant({ transcript }: ChatAssistantProps) {
               disabled={!input.trim() || isLoading}
               className="px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white rounded-xl transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                />
               </svg>
             </button>
           </form>
@@ -184,4 +275,3 @@ export default function ChatAssistant({ transcript }: ChatAssistantProps) {
     </div>
   );
 }
-

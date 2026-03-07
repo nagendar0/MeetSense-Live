@@ -7,10 +7,16 @@
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
     "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
-    "build": "cd frontend && npm run build"
+    "build": "cd frontend && npm run build",
+    "test": "cd backend && npm test",
+    "test:watch": "cd backend && npm run test:watch",
+    "test:coverage": "cd backend && npm run test:coverage",
+    "lint": "cd frontend && npm run lint",
+    "lint:fix": "cd frontend && npm run lint -- --fix"
   },
   "dependencies": {
     "@google/genai": "^1.44.0",
+    "@xyflow/react": "^12.10.1",
     "concurrently": "^8.2.2",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",

@@ -1,3 +1,4 @@
+/* eslint-disable */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -22,8 +23,9 @@ body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+    Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
 }
 
 /* Custom scrollbar */
@@ -67,7 +69,8 @@ body {
 
 /* Pulse animation for recording */
 @keyframes record-pulse {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
   }
   50% {
@@ -81,7 +84,9 @@ body {
 
 /* Typing indicator */
 @keyframes typing {
-  0%, 60%, 100% {
+  0%,
+  60%,
+  100% {
     transform: translateY(0);
   }
   30% {
@@ -101,3 +106,450 @@ body {
   animation-delay: 0.4s;
 }
 
+/* ============================================
+   CINEMATIC PAGE TRANSITIONS
+   ============================================ */
+.page-transition-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-transition-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.page-transition-exit {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-transition-exit-active {
+  opacity: 0;
+  transform: translateY(-20px);
+  transition:
+    opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Curtain reveal effect */
+.curtain-reveal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.curtain-reveal::before,
+.curtain-reveal::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 50%;
+  background: #0d0d0f;
+  transition: transform 0.8s cubic-bezier(0.7, 0, 0.3, 1);
+}
+
+.curtain-reveal::before {
+  top: 0;
+  transform: translateY(-100%);
+}
+
+.curtain-reveal::after {
+  bottom: 0;
+  transform: translateY(100%);
+}
+
+.curtain-reveal.active::before,
+.curtain-reveal.active::after {
+  transform: translateY(0);
+}
+
+/* ============================================
+   SCROLL MORPHING ANIMATIONS
+   ============================================ */
+.morph-card {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.morph-card:hover {
+  transform: scale(1.02) translateY(-5px);
+}
+
+.scroll-morph {
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Morphing on scroll - will be controlled by Framer Motion */
+.scroll-morph-1 {
+  transform: scale(1) rotate(0deg);
+}
+
+.scroll-morph-2 {
+  transform: scale(1.05) rotate(1deg);
+}
+
+.scroll-morph-3 {
+  transform: scale(1.1) rotate(2deg);
+}
+
+/* ============================================
+   IMAGE DISTORTION HOVER EFFECTS
+   ============================================ */
+.image-distort-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.image-distort-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    45deg,
+    transparent 40%,
+    rgba(76, 175, 80, 0.3) 50%,
+    transparent 60%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.image-distort-container:hover::before {
+  transform: translateX(100%);
+}
+
+.image-distort-container img {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.image-distort-container:hover img {
+  transform: scale(1.1) skewX(2deg);
+  filter: contrast(1.1) saturate(1.2);
+}
+
+/* Glitch effect on hover */
+.glitch-hover {
+  position: relative;
+}
+
+.glitch-hover::before,
+.glitch-hover::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: inherit;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.glitch-hover::before {
+  transform: translate(-2px, -2px);
+  clip-path: inset(0 0 0 0);
+}
+
+.glitch-hover::after {
+  transform: translate(2px, 2px);
+  clip-path: inset(0 0 0 0);
+}
+
+.glitch-hover:hover::before {
+  opacity: 0.8;
+  animation: glitch-1 0.3s infinite;
+}
+
+.glitch-hover:hover::after {
+  opacity: 0.8;
+  animation: glitch-2 0.3s infinite;
+}
+
+@keyframes glitch-1 {
+  0%,
+  100% {
+    transform: translate(-3px, 0);
+  }
+  50% {
+    transform: translate(3px, 0);
+  }
+}
+
+@keyframes glitch-2 {
+  0%,
+  100% {
+    transform: translate(3px, 0);
+  }
+  50% {
+    transform: translate(-3px, 0);
+  }
+}
+
+/* Ripple effect */
+.ripple-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple-container .ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(76, 175, 80, 0.4);
+  transform: scale(0);
+  animation: ripple-effect 0.6s linear;
+  pointer-events: none;
+}
+
+@keyframes ripple-effect {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+/* ============================================
+   PARALLAX SCROLL EFFECTS
+   ============================================ */
+.parallax-container {
+  perspective: 1px;
+  height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.parallax-layer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.parallax-layer-base {
+  transform: translateZ(0);
+}
+
+.parallax-layer-back {
+  transform: translateZ(-1px) scale(2);
+}
+
+.parallax-layer-deep {
+  transform: translateZ(-2px) scale(3);
+}
+
+/* ============================================
+   STAGGERED REVEAL ANIMATIONS
+   ============================================ */
+.reveal-container {
+  overflow: hidden;
+}
+
+.reveal-text {
+  transform: translateY(100%);
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.reveal-container.revealed .reveal-text {
+  transform: translateY(0);
+}
+
+.reveal-scale {
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.reveal-container.revealed .reveal-scale {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Stagger delays */
+.stagger-delay-1 {
+  transition-delay: 0.1s;
+}
+.stagger-delay-2 {
+  transition-delay: 0.2s;
+}
+.stagger-delay-3 {
+  transition-delay: 0.3s;
+}
+.stagger-delay-4 {
+  transition-delay: 0.4s;
+}
+.stagger-delay-5 {
+  transition-delay: 0.5s;
+}
+.stagger-delay-6 {
+  transition-delay: 0.6s;
+}
+
+/* ============================================
+   FLOATING PARTICLE BACKGROUND
+   ============================================ */
+.particle-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(76, 175, 80, 0.3) 0%,
+    transparent 70%
+  );
+  animation: float-particle linear infinite;
+}
+
+@keyframes float-particle {
+  0% {
+    transform: translateY(100vh) scale(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-100vh) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ============================================
+   SCROLL PROGRESS BAR
+   ============================================ */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #4caf50, #81c784, #4caf50);
+  z-index: 9999;
+  transform-origin: left;
+  transition: transform 0.1s linear;
+}
+
+/* ============================================
+   SMOOTH SCROLL BEHAVIOR
+   ============================================ */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbar but allow scrolling */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ============================================
+   MORPHING BUTTON EFFECTS
+   ============================================ */
+.morph-button {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.morph-button::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(76, 175, 80, 0.3);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition:
+    width 0.6s ease,
+    height 0.6s ease;
+}
+
+.morph-button:hover::before {
+  width: 300px;
+  height: 300px;
+}
+
+.morph-button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 10px 40px rgba(76, 175, 80, 0.3);
+}
+
+/* ============================================
+   GLOW EFFECTS
+   ============================================ */
+.glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(76, 175, 80, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(76, 175, 80, 0.6);
+  }
+}
+
+/* ============================================
+   TEXT GRADIENT ANIMATION
+   ============================================ */
+.gradient-animate {
+  background-size: 200% auto;
+  animation: gradient-shift 3s linear infinite;
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+/* ============================================
+   GLASS MORPHISM ENHANCEMENTS
+   ============================================ */
+.glass-morph {
+  background: rgba(32, 33, 35, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.glass-morph:hover {
+  background: rgba(32, 33, 35, 0.8);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  box-shadow: 0 12px 48px rgba(76, 175, 80, 0.2);
+}

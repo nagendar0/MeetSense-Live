@@ -15,11 +15,15 @@ export interface MeetingRecord {
 
 interface MeetingHistoryProps {
   onLoadMeeting?: (meeting: MeetingRecord) => void;
+  onChatWithMeeting?: (meeting: MeetingRecord) => void;
 }
 
 const STORAGE_KEY = "meetsense_meeting_history";
 
-export default function MeetingHistory({ onLoadMeeting }: MeetingHistoryProps) {
+export default function MeetingHistory({
+  onLoadMeeting,
+  onChatWithMeeting,
+}: MeetingHistoryProps) {
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -150,27 +154,53 @@ export default function MeetingHistory({ onLoadMeeting }: MeetingHistoryProps) {
                             {meeting.summary?.summary || "No summary available"}
                           </p>
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMeeting(meeting.id);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 text-dark-500 hover:text-red-400 transition-all"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
+                        <div className="flex items-center gap-1 ml-2">
+                          {onChatWithMeeting && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onChatWithMeeting(meeting);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-1.5 text-dark-500 hover:text-accent-400 hover:bg-dark-600 rounded-lg transition-all"
+                              title="Chat with this meeting"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                                />
+                              </svg>
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteMeeting(meeting.id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 text-dark-500 hover:text-red-400 transition-all"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
