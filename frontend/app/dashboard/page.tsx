@@ -60,6 +60,117 @@ export default function Dashboard() {
   const [isLiveInsightsEnabled, setIsLiveInsightsEnabled] =
     useState<boolean>(true);
 
+  // Screen capture state
+  const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [screenExplanation, setScreenExplanation] = useState<string>("");
+  const [isAnalyzingScreen, setIsAnalyzingScreen] = useState<boolean>(false);
+  const [screenPreviewUrl, setScreenPreviewUrl] = useState<string | null>(null);
+
+  // Screen capture refs
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const screenCaptureIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Start screen sharing
+  const startScreenShare = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+
+      setScreenStream(stream);
+      setIsScreenSharing(true);
+
+      // Set up video element for preview
+      if (screenVideoRef.current) {
+        screenVideoRef.current.srcObject = stream;
+      }
+
+      // Handle when user stops sharing via browser UI
+      stream.getVideoTracks()[0].onended = () => {
+        stopScreenShare();
+      };
+
+      // Start capturing screenshots every 10 seconds
+      startScreenCapture();
+    } catch (error) {
+      console.error("Error starting screen share:", error);
+      alert("Failed to start screen sharing. Please try again.");
+    }
+  };
+
+  // Stop screen sharing
+  const stopScreenShare = () => {
+    if (screenStream) {
+      screenStream.getTracks().forEach((track) => track.stop());
+      setScreenStream(null);
+    }
+    setIsScreenSharing(false);
+    setScreenPreviewUrl(null);
+
+    // Stop screen capture interval
+    if (screenCaptureIntervalRef.current) {
+      clearInterval(screenCaptureIntervalRef.current);
+      screenCaptureIntervalRef.current = null;
+    }
+  };
+
+  // Capture screenshot and analyze
+  const captureAndAnalyzeScreen = async () => {
+    if (!screenVideoRef.current || !screenCanvasRef.current) return;
+
+    const video = screenVideoRef.current;
+    const canvas = screenCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+
+    if (!ctx || video.readyState !== 4) return;
+
+    // Set canvas size to match video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    // Draw video frame to canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Get base64 image
+    const imageData = canvas.toDataURL("image/png");
+    setScreenPreviewUrl(imageData);
+
+    // Send to backend for analysis
+    setIsAnalyzingScreen(true);
+    try {
+      const result = await api.analyzeScreen(imageData);
+      if (isMounted.current) {
+        setScreenExplanation(result.analysis);
+      }
+    } catch (error) {
+      console.error("Screen analysis error:", error);
+    } finally {
+      if (isMounted.current) {
+        setIsAnalyzingScreen(false);
+      }
+    }
+  };
+
+  // Start periodic screen capture
+  const startScreenCapture = () => {
+    // Initial capture after 2 seconds
+    setTimeout(() => {
+      if (isMounted.current && isScreenSharing) {
+        captureAndAnalyzeScreen();
+      }
+    }, 2000);
+
+    // Then capture every 10 seconds
+    screenCaptureIntervalRef.current = setInterval(() => {
+      if (isMounted.current && isScreenSharing) {
+        captureAndAnalyzeScreen();
+      }
+    }, 10000);
+  };
+
   // Filter out background noise and short utterances
   const isValidTranscript = (text: string): boolean => {
     // Ignore very short texts
@@ -611,7 +722,7 @@ export default function Dashboard() {
                 meeting. Click "Stop Meeting Assistant" to end and analyze the
                 meeting.
               </p>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 {!isRecording ? (
                   <button
                     onClick={startMeetingAssistant}
@@ -660,6 +771,49 @@ export default function Dashboard() {
                   </button>
                 )}
 
+                {/* Screen Share Button */}
+                {!isScreenSharing ? (
+                  <button
+                    onClick={startScreenShare}
+                    className="flex items-center gap-2 px-4 py-3 bg-dark-700 hover:bg-dark-600 text-white rounded-xl font-medium transition-smooth"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M5 12h14M12 12l3-3m0 0l-3-3m3 3h-8"
+                      />
+                    </svg>
+                    Share Screen
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopScreenShare}
+                    className="flex items-center gap-2 px-4 py-3 bg-dark-700 hover:bg-red-600 text-white rounded-xl font-medium transition-smooth"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                    Stop Screen
+                  </button>
+                )}
+
                 {transcript && !isRecording && (
                   <button
                     onClick={clearTranscript}
@@ -676,6 +830,16 @@ export default function Dashboard() {
                   <span className="text-sm">
                     Listening silently... The AI will not respond during the
                     meeting
+                  </span>
+                </div>
+              )}
+
+              {/* Screen Sharing Status */}
+              {isScreenSharing && (
+                <div className="mt-4 flex items-center gap-2 text-green-400">
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+                  <span className="text-sm">
+                    Screen sharing active - Analyzing slides automatically
                   </span>
                 </div>
               )}
@@ -881,6 +1045,71 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+
+            {/* Screen Explanation Panel */}
+            {isScreenSharing && (
+              <div className="glass rounded-2xl p-6 animate-fade-in">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <svg
+                      className="w-5 h-5 text-purple-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M5 12h14M12 12l3-3m0 0l-3-3m3 3h-8"
+                      />
+                    </svg>
+                    Screen Explanation
+                  </h2>
+                  {isAnalyzingScreen && (
+                    <span className="text-xs text-purple-400 flex items-center gap-1">
+                      <span className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></span>
+                      Analyzing...
+                    </span>
+                  )}
+                </div>
+
+                {/* Screen Preview */}
+                {screenPreviewUrl && (
+                  <div className="mb-4 rounded-lg overflow-hidden border border-dark-700">
+                    <img
+                      src={screenPreviewUrl}
+                      alt="Screen capture"
+                      className="w-full h-auto"
+                    />
+                  </div>
+                )}
+
+                {/* Explanation Text */}
+                {screenExplanation ? (
+                  <div className="p-4 bg-dark-800/50 rounded-lg">
+                    <p className="text-sm text-dark-200 leading-relaxed">
+                      {screenExplanation}
+                    </p>
+                  </div>
+                ) : (
+                  !isAnalyzingScreen && (
+                    <p className="text-sm text-dark-500 text-center py-4">
+                      Analyzing screen content...
+                    </p>
+                  )
+                )}
+              </div>
+            )}
+
+            {/* Hidden elements for screen capture */}
+            <video
+              ref={screenVideoRef}
+              autoPlay
+              playsInline
+              className="hidden"
+            />
+            <canvas ref={screenCanvasRef} className="hidden" />
 
             {/* Meeting History */}
             <MeetingHistory />

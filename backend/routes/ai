@@ -1,0 +1,17 @@
+const express = require('express');
+const router = express.Router();
+const { summarizeMeeting, generateRealtimeSummary, getMeetingSummary } = require('../controllers/summarizeController');
+const { generateInsights, generateRealtimeInsights, generateSuggestions, getMeetingInsights } = require('../controllers/insightsController');
+const { askQuestion, chat } = require('../controllers/chatController');
+
+router.post('/summarize', summarizeMeeting);
+router.post('/realtime-summary', generateRealtimeSummary);
+router.get('/:id/summary', getMeetingSummary);
+router.post('/insights', generateInsights);
+router.post('/realtime-insights', generateRealtimeInsights);
+router.post('/suggestions', generateSuggestions);
+router.get('/:id/insights', getMeetingInsights);
+router.post('/ask', askQuestion);
+router.post('/chat', chat);
+
+module.exports = router;
